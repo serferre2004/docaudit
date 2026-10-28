@@ -6,6 +6,7 @@ __pycache__/
 .ruff_cache/
 dist/
 *.egg-info/
+lessons/
 
 # Secrets and local config — never commit these
 .env
