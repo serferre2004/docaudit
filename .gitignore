@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+*.egg-info/
+
+# Secrets and local config — never commit these
+.env
+
+# Local data produced by the pipeline
+data/generated/
+data/index/
+*.sqlite3
