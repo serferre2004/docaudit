@@ -6,6 +6,9 @@ __pycache__/
 .ruff_cache/
 dist/
 *.egg-info/
+
+# Private study notes — kept locally, never published
+docs/
 lessons/
 
 # Secrets and local config — never commit these
