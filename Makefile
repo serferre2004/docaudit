@@ -11,8 +11,9 @@ format:
 	uv run ruff check --fix .
 	uv run ruff format .
 
+# `python -m` instead of the mypy.exe shim: Windows Smart App Control blocks the shim.
 typecheck:
-	uv run mypy
+	uv run python -m mypy
 
 test:
 	uv run pytest
