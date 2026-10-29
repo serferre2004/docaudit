@@ -19,11 +19,11 @@ async def _ask(
     if provider_name:
         settings = settings.model_copy(update={"llm_provider": provider_name})
 
-    provider = create_provider(settings)
     try:
-        reply = await provider.complete(
-            [Message(role="user", content=prompt)], system=system, temperature=temp
-        )
+        async with create_provider(settings) as provider:
+            reply = await provider.complete(
+                [Message(role="user", content=prompt)], system=system, temperature=temp
+            )
     except LLMError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

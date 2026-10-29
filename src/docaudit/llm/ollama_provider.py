@@ -8,7 +8,8 @@ POST, and ``httpx.MockTransport`` lets us test the provider with no server at al
 """
 
 from collections.abc import Sequence
-from typing import Any
+from types import TracebackType
+from typing import Any, Self
 
 import httpx
 
@@ -114,3 +115,14 @@ class OllamaProvider:
 
     async def aclose(self) -> None:
         await self.client.aclose()
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        await self.aclose()

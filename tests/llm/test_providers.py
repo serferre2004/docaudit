@@ -152,12 +152,42 @@ def test_factory_requires_api_key_for_anthropic() -> None:
         create_provider(settings)
 
 
-def test_factory_builds_selected_provider() -> None:
-    a = create_provider(
-        Settings(llm_provider="anthropic", anthropic_api_key=SecretStr("k"), _env_file=None)  # type: ignore[call-arg]
-    )
-    o = create_provider(Settings(llm_provider="ollama", _env_file=None))  # type: ignore[call-arg]
-    assert (a.name, o.name) == ("anthropic", "ollama")
+async def test_factory_builds_selected_provider() -> None:
+    async with (
+        create_provider(
+            Settings(llm_provider="anthropic", anthropic_api_key=SecretStr("k"), _env_file=None)  # type: ignore[call-arg]
+        ) as a,
+        create_provider(Settings(llm_provider="ollama", _env_file=None)) as o,  # type: ignore[call-arg]
+    ):
+        assert (a.name, o.name) == ("anthropic", "ollama")
+
+
+# --- Lifecycle: providers close themselves when the `async with` block exits -----
+
+
+async def test_ollama_closes_on_exit_even_if_the_block_raises() -> None:
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json={}))
+    provider = OllamaProvider(base_url="http://test", model="m", transport=transport)
+    with pytest.raises(RuntimeError):
+        async with provider as p:
+            assert p is provider
+            raise RuntimeError("boom")
+    assert provider.client.is_closed
+
+
+async def test_anthropic_closes_on_exit() -> None:
+    transport = httpx2.MockTransport(lambda request: httpx2.Response(200, json={}))
+    async with anth.AnthropicProvider(api_key="k", model="m", transport=transport) as provider:
+        assert not provider.client.is_closed()
+    assert provider.client.is_closed()
+
+
+async def test_fake_provider_rejects_use_after_close() -> None:
+    async with FakeProvider(replies=["one", "two"]) as fake:
+        assert (await fake.complete(MSGS)).text == "one"
+    assert fake.closed
+    with pytest.raises(LLMError):
+        await fake.complete(MSGS)
 
 
 # --- Integration (real model; skipped by default) --------------------------------
@@ -167,8 +197,8 @@ def test_factory_builds_selected_provider() -> None:
 async def test_real_provider_roundtrip() -> None:
     from docaudit.config import get_settings
 
-    provider = create_provider(get_settings())
-    reply = await provider.complete(
-        [Message(role="user", content="Reply with exactly the word: pong")], max_tokens=20
-    )
+    async with create_provider(get_settings()) as provider:
+        reply = await provider.complete(
+            [Message(role="user", content="Reply with exactly the word: pong")], max_tokens=20
+        )
     assert "pong" in reply.text.lower()
