@@ -12,7 +12,7 @@ from typing import Any
 
 import httpx
 
-from docaudit.llm.types import LLMResponse, Message
+from docaudit.llm.types import LLMError, LLMResponse, Message, Usage
 
 
 def build_payload(
@@ -32,7 +32,21 @@ def build_payload(
       * Sampling params go under ``options``: ``num_predict`` is Ollama's name for max tokens.
         Include ``temperature`` in ``options`` ONLY if it is not ``None``.
     """
-    raise NotImplementedError
+    msg_list = []
+    if system:
+        msg_list.append({"role": "system", "content": system})
+    for msg in messages:
+        msg_list.append(msg.model_dump())
+    options: dict[str, object] = {"num_predict": max_tokens}
+    if temperature is not None:
+        options["temperature"] = temperature
+    base_dict = {
+        "model": model,
+        "stream": False,
+        "options": options,
+        "messages": msg_list,
+    }
+    return base_dict
 
 
 class OllamaProvider:
@@ -61,7 +75,8 @@ class OllamaProvider:
         timeout_s: float = 120.0,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
-        raise NotImplementedError
+        self.model = model
+        self.client = httpx.AsyncClient(base_url=base_url, transport=transport, timeout=timeout_s)
 
     async def complete(
         self,
@@ -71,7 +86,31 @@ class OllamaProvider:
         temperature: float | None = None,
         max_tokens: int = 1024,
     ) -> LLMResponse:
-        raise NotImplementedError
+        try:
+            response = await self.client.post(
+                "/api/chat",
+                json=build_payload(
+                    messages,
+                    model=self.model,
+                    system=system,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                ),
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise LLMError(f"Ollama request failed: {exc}") from exc
+        res = response.json()
+        usage = Usage(
+            input_tokens=res.get("prompt_eval_count", 0),
+            output_tokens=res.get("eval_count", 0),
+        )
+        return LLMResponse(
+            model=res["model"],
+            text=res["message"]["content"],
+            stop_reason=res.get("done_reason"),
+            usage=usage,
+        )
 
     async def aclose(self) -> None:
-        raise NotImplementedError
+        await self.client.aclose()
