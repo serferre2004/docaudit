@@ -1,5 +1,7 @@
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from types import TracebackType
+from typing import Self
 
 from docaudit.llm.types import LLMError, LLMResponse, Message
 
@@ -23,6 +25,7 @@ class FakeProvider:
     replies: list[str]
     name: str = "fake"
     calls: list[RecordedCall] = field(default_factory=list)
+    closed: bool = False
 
     async def complete(
         self,
@@ -32,7 +35,23 @@ class FakeProvider:
         temperature: float | None = None,
         max_tokens: int = 1024,
     ) -> LLMResponse:
+        if self.closed:
+            raise LLMError("FakeProvider was used after aclose()")
         self.calls.append(RecordedCall(list(messages), system, temperature, max_tokens))
         if not self.replies:
             raise LLMError("FakeProvider ran out of scripted replies")
         return LLMResponse(text=self.replies.pop(0), model="fake-model", stop_reason="end_turn")
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        await self.aclose()
