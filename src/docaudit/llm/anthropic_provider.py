@@ -7,7 +7,10 @@ Tests that define "done": tests/llm/test_providers.py  (the ``anthropic`` ones)
 from collections.abc import Sequence
 from typing import Any
 
-from docaudit.llm.types import LLMResponse, Message
+import httpx2
+from anthropic import APIError, AsyncAnthropic
+
+from docaudit.llm.types import LLMError, LLMResponse, Message, Usage
 
 
 def build_payload(
@@ -29,7 +32,16 @@ def build_payload(
 
     Keep this a pure function: no network, no client. That is what makes it trivially testable.
     """
-    raise NotImplementedError
+    base_dict = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": [msg.model_dump() for msg in messages],
+    }
+    if system:
+        base_dict["system"] = system
+    if temperature is not None:
+        base_dict["temperature"] = temperature
+    return base_dict
 
 
 class AnthropicProvider:
@@ -49,8 +61,20 @@ class AnthropicProvider:
 
     name = "anthropic"
 
-    def __init__(self, *, api_key: str, model: str, timeout_s: float = 120.0) -> None:
-        raise NotImplementedError
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str,
+        timeout_s: float = 120.0,
+        transport: httpx2.AsyncBaseTransport | None = None,
+        max_retries: int = 2,
+    ) -> None:
+        self.model = model
+        http_client = httpx2.AsyncClient(transport=transport) if transport is not None else None
+        self.client = AsyncAnthropic(
+            api_key=api_key, timeout=timeout_s, http_client=http_client, max_retries=max_retries
+        )
 
     async def complete(
         self,
@@ -60,4 +84,26 @@ class AnthropicProvider:
         temperature: float | None = None,
         max_tokens: int = 1024,
     ) -> LLMResponse:
-        raise NotImplementedError
+        payload = build_payload(
+            messages,
+            model=self.model,
+            max_tokens=max_tokens,
+            system=system,
+            temperature=temperature,
+        )
+        try:
+            message = await self.client.messages.create(
+                **payload,
+            )
+            usage = Usage(
+                input_tokens=message.usage.input_tokens, output_tokens=message.usage.output_tokens
+            )
+            text = "".join([c.text for c in message.content if c.type == "text"])
+            return LLMResponse(
+                model=message.model, stop_reason=message.stop_reason, text=text, usage=usage
+            )
+        except APIError as exc:
+            raise LLMError("Error while receiving response from Anthropic") from exc
+
+    async def aclose(self) -> None:
+        await self.client.close()
