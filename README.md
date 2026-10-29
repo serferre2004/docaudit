@@ -4,7 +4,7 @@
 > retrieves the contract clauses and policies that apply (RAG), verifies facts with tools,
 > and decides whether to **approve**, **flag**, or **escalate to a human** — with citations.
 
-**Status:** 🚧 under construction — see the [roadmap](docs/ROADMAP.md).
+**Status:** 🚧 under active development.
 
 ## What this project demonstrates
 
@@ -14,8 +14,6 @@
 - **Tool calling** against vendor, purchase-order, and FX systems
 - **Agentic workflow** with human-in-the-loop and an audit trail
 - **Evals and safety** — synthetic ground-truth dataset, regression gates, prompt-injection tests
-
-Architecture and design decisions: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Quickstart
 
@@ -40,5 +38,3 @@ make integration   # tests that call a real model
 ```
 
 Unit tests never call a real model; they use a scripted `FakeProvider`.
-
-> This repo is built step by step as a learning project; see [docs/ROADMAP.md](docs/ROADMAP.md) and the `lessons/` folder.
