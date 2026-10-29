@@ -1,6 +1,7 @@
 import json
 
 import httpx
+import httpx2
 import pytest
 from pydantic import SecretStr
 
@@ -28,6 +29,58 @@ def test_anthropic_sends_temperature_when_given() -> None:
     p = anth.build_payload(MSGS, model="m", system=None, temperature=0.0, max_tokens=10)
     assert p["temperature"] == 0.0
     assert "system" not in p
+
+
+# --- Anthropic end-to-end against a mocked HTTP transport  ---------
+
+
+async def test_anthropic_parses_response() -> None:
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        body = json.loads(request.content)
+        assert body["model"] == "anthropic-test"
+        return httpx2.Response(
+            200,
+            json={
+                "id": "msg_test",
+                "type": "message",
+                "role": "assistant",
+                "model": "anthropic-test",
+                "content": [
+                    {"type": "text", "text": "This"},
+                    {"type": "text", "text": " is"},
+                    {"type": "tool_use", "id": "toolu_test", "name": "lookup", "input": {}},
+                    {"type": "text", "text": " a test"},
+                ],
+                "stop_reason": "end_turn",
+                "stop_sequence": None,
+                "usage": {
+                    "input_tokens": 10,
+                    "output_tokens": 5,
+                },
+            },
+        )
+
+    provider = anth.AnthropicProvider(
+        api_key="fake-api-key",
+        model="anthropic-test",
+        transport=httpx2.MockTransport(handler),
+        max_retries=0,
+    )
+    reply = await provider.complete(MSGS)
+    assert reply.text == "This is a test"
+    assert reply.stop_reason == "end_turn"
+    assert (reply.usage.input_tokens, reply.usage.output_tokens) == (10, 5)
+    await provider.aclose()
+
+
+async def test_anthropic_wraps_http_errors_in_llmerror() -> None:
+    transport = httpx2.MockTransport(lambda request: httpx2.Response(500, text="boom"))
+    provider = anth.AnthropicProvider(
+        api_key="fake-api-key", model="m", transport=transport, max_retries=0
+    )
+    with pytest.raises(LLMError):
+        await provider.complete(MSGS)
+    await provider.aclose()
 
 
 # --- Ollama payload translation -------------------------------------------------
