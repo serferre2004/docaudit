@@ -27,7 +27,7 @@ _MONTHS = (
 )  # fmt: skip
 
 _VENDORS = (
-    ("Andes Logistics S.A.S.", "900.482.117-3", "ALS"),
+    ("Aston Logistics S.A.S.", "900.482.117-3", "ALS"),
     ("Northwind Office Supply Ltd.", "GB 284 7710 52", "NOS"),
     ("Cobalt Data Services Inc.", "84-1937265", "CDS"),
     ("Brisa Facility Management", "901.336.904-1", "BFM"),
