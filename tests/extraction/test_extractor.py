@@ -49,6 +49,17 @@ async def test_gives_up_after_max_attempts() -> None:
     assert "3" in str(excinfo.value)
 
 
+def test_rejects_max_attempts_below_one() -> None:
+    with pytest.raises(ValueError, match="max_attempts"):
+        InvoiceExtractor(FakeProvider(replies=[]), max_attempts=0)
+
+
+async def test_sends_the_invoice_schema_on_every_attempt(invoice_json: str) -> None:
+    fake = FakeProvider(replies=["nope", invoice_json])
+    await InvoiceExtractor(fake).extract(DOC)
+    assert [c.response_schema for c in fake.calls] == [Invoice.model_json_schema()] * 2
+
+
 async def test_provider_errors_propagate_and_are_not_retried() -> None:
     fake = FakeProvider(replies=[])  # raises LLMError on the first call
     with pytest.raises(LLMError):
