@@ -6,7 +6,10 @@ Even when told "reply with JSON only", models wrap it in Markdown fences or add 
 before or after. This is the tolerant step between "text the model wrote" and "data we validate".
 """
 
+from json import JSONDecodeError, JSONDecoder
 from typing import Any
+
+from docaudit.extraction.schemas import ExtractionError
 
 
 def parse_json_object(text: str) -> dict[str, Any]:
@@ -25,4 +28,14 @@ def parse_json_object(text: str) -> dict[str, Any]:
 
     Keep this a pure function. Hint: look at ``json.JSONDecoder.raw_decode`` in the stdlib docs.
     """
-    raise NotImplementedError
+    brace_index = text.find("{")
+    bracket_index = text.find("[")
+    if brace_index == -1 or (bracket_index != -1 and bracket_index < brace_index):
+        raise ExtractionError("No JSON object found")
+    decoder = JSONDecoder()
+    try:
+        obj: dict[str, Any] = {}
+        obj, _ = decoder.raw_decode(text, idx=brace_index)
+        return obj
+    except JSONDecodeError as e:
+        raise ExtractionError(f"JSON decoding error: {e.msg}") from e
