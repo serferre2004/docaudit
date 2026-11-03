@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from types import TracebackType
-from typing import Self
+from typing import Any, Self
 
 from docaudit.llm.types import LLMError, LLMResponse, Message, Usage
 
@@ -12,6 +12,7 @@ class RecordedCall:
     system: str | None
     temperature: float | None
     max_tokens: int
+    response_schema: dict[str, Any] | None = None
 
 
 @dataclass
@@ -36,10 +37,13 @@ class FakeProvider:
         system: str | None = None,
         temperature: float | None = None,
         max_tokens: int = 1024,
+        response_schema: dict[str, Any] | None = None,
     ) -> LLMResponse:
         if self.closed:
             raise LLMError("FakeProvider was used after aclose()")
-        self.calls.append(RecordedCall(list(messages), system, temperature, max_tokens))
+        self.calls.append(
+            RecordedCall(list(messages), system, temperature, max_tokens, response_schema)
+        )
         if not self.replies:
             raise LLMError("FakeProvider ran out of scripted replies")
         return LLMResponse(

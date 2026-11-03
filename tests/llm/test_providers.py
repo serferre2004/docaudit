@@ -94,7 +94,34 @@ def test_ollama_puts_system_in_messages_and_params_in_options() -> None:
     assert p["stream"] is False
 
 
+def test_ollama_sends_response_schema_as_format_only_when_given() -> None:
+    schema = {"type": "object"}
+    with_schema = ollama_payload(
+        MSGS, model="m", system=None, temperature=None, max_tokens=10, response_schema=schema
+    )
+    assert with_schema["format"] == schema, "format is top-level, not inside options"
+
+    without = ollama_payload(MSGS, model="m", system=None, temperature=None, max_tokens=10)
+    assert "format" not in without
+
+
 # --- Ollama end-to-end against a mocked HTTP transport ---------------------------
+
+
+async def test_ollama_complete_forwards_response_schema() -> None:
+    schema = {"type": "object"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert json.loads(request.content)["format"] == schema
+        return httpx.Response(
+            200, json={"model": "m", "message": {"role": "assistant", "content": "{}"}}
+        )
+
+    provider = OllamaProvider(
+        base_url="http://test", model="m", transport=httpx.MockTransport(handler)
+    )
+    await provider.complete(MSGS, response_schema=schema)
+    await provider.aclose()
 
 
 async def test_ollama_parses_response() -> None:

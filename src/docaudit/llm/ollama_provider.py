@@ -23,6 +23,7 @@ def build_payload(
     system: str | None,
     temperature: float | None,
     max_tokens: int,
+    response_schema: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Translate our neutral types into the JSON body for ``POST /api/chat``.
 
@@ -32,6 +33,7 @@ def build_payload(
       * ``stream`` must be ``False`` so we get a single JSON response.
       * Sampling params go under ``options``: ``num_predict`` is Ollama's name for max tokens.
         Include ``temperature`` in ``options`` ONLY if it is not ``None``.
+      * ``response_schema`` goes in the top-level ``format`` field, ONLY if it is not ``None``.
     """
     msg_list = []
     if system:
@@ -47,6 +49,8 @@ def build_payload(
         "options": options,
         "messages": msg_list,
     }
+    if response_schema is not None:
+        base_dict["format"] = response_schema
     return base_dict
 
 
@@ -86,6 +90,7 @@ class OllamaProvider:
         system: str | None = None,
         temperature: float | None = None,
         max_tokens: int = 1024,
+        response_schema: dict[str, Any] | None = None,
     ) -> LLMResponse:
         try:
             response = await self.client.post(
@@ -96,6 +101,7 @@ class OllamaProvider:
                     system=system,
                     temperature=temperature,
                     max_tokens=max_tokens,
+                    response_schema=response_schema,
                 ),
             )
             response.raise_for_status()
