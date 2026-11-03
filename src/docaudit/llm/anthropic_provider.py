@@ -58,6 +58,8 @@ class AnthropicProvider:
           - Map ``resp.usage`` to our ``Usage`` and ``resp.stop_reason`` to ``stop_reason``.
       * Any ``anthropic.APIError`` must be re-raised as our ``LLMError`` (keep the cause with
         ``raise ... from exc``) so no caller ever depends on a vendor exception.
+      * ``response_schema`` is accepted to honor the protocol but ignored: this backend relies on
+        the schema in the prompt and on the caller's validation.
     """
 
     name = "anthropic"
@@ -84,6 +86,7 @@ class AnthropicProvider:
         system: str | None = None,
         temperature: float | None = None,
         max_tokens: int = 1024,
+        response_schema: dict[str, Any] | None = None,
     ) -> LLMResponse:
         payload = build_payload(
             messages,
