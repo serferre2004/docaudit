@@ -1,0 +1,46 @@
+from docaudit.rag.answering import ClauseAnswerer, build_answer_prompt, verify_citations
+from docaudit.rag.base import Retriever
+from docaudit.rag.chunking import chunk_document
+from docaudit.rag.embeddings import Embedder, HashingEmbedder, OllamaEmbedder
+from docaudit.rag.hybrid import HybridRetriever, reciprocal_rank_fusion
+from docaudit.rag.keyword import BM25Index, tokenize
+from docaudit.rag.metrics import hit_rate, mean_reciprocal_rank, reciprocal_rank
+from docaudit.rag.schemas import (
+    AnswerError,
+    AnswerResult,
+    Chunk,
+    Citation,
+    ClauseAnswer,
+    EvalQuestion,
+    SearchHit,
+    SourceDocument,
+)
+from docaudit.rag.vector import VectorIndex, cosine_similarity
+
+__all__ = [
+    "AnswerError",
+    "AnswerResult",
+    "BM25Index",
+    "Chunk",
+    "Citation",
+    "ClauseAnswer",
+    "ClauseAnswerer",
+    "Embedder",
+    "EvalQuestion",
+    "HashingEmbedder",
+    "HybridRetriever",
+    "OllamaEmbedder",
+    "Retriever",
+    "SearchHit",
+    "SourceDocument",
+    "VectorIndex",
+    "build_answer_prompt",
+    "chunk_document",
+    "cosine_similarity",
+    "hit_rate",
+    "mean_reciprocal_rank",
+    "reciprocal_rank",
+    "reciprocal_rank_fusion",
+    "tokenize",
+    "verify_citations",
+]
