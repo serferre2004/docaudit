@@ -25,6 +25,7 @@ class Settings(BaseSettings):
 
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.1:8b"
+    ollama_embedding_model: str = "nomic-embed-text"
 
     request_timeout_s: float = 120.0
 
