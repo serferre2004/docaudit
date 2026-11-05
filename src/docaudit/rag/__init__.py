@@ -3,6 +3,7 @@ from docaudit.rag.chunking import chunk_document
 from docaudit.rag.embeddings import Embedder, HashingEmbedder, OllamaEmbedder
 from docaudit.rag.hybrid import HybridRetriever, reciprocal_rank_fusion
 from docaudit.rag.keyword import BM25Index, tokenize
+from docaudit.rag.metrics import hit_rate, mean_reciprocal_rank, reciprocal_rank
 from docaudit.rag.schemas import (
     AnswerError,
     AnswerResult,
@@ -33,6 +34,9 @@ __all__ = [
     "VectorIndex",
     "chunk_document",
     "cosine_similarity",
+    "hit_rate",
+    "mean_reciprocal_rank",
+    "reciprocal_rank",
     "reciprocal_rank_fusion",
     "tokenize",
 ]
