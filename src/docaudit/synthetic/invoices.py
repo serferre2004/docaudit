@@ -26,7 +26,7 @@ _MONTHS = (
     "July", "August", "September", "October", "November", "December",
 )  # fmt: skip
 
-_VENDORS = (
+VENDORS = (
     ("Aston Logistics S.A.S.", "900.482.117-3", "ALS"),
     ("Northwind Office Supply Ltd.", "GB 284 7710 52", "NOS"),
     ("Cobalt Data Services Inc.", "84-1937265", "CDS"),
@@ -65,7 +65,7 @@ def generate_invoices(n: int, *, seed: int = 0) -> list[SyntheticInvoice]:
 
 
 def _generate_one(rng: random.Random, index: int, layout: str) -> SyntheticInvoice:
-    vendor_name, tax_id, prefix = rng.choice(_VENDORS)
+    vendor_name, tax_id, prefix = rng.choice(VENDORS)
     currency = rng.choice(tuple(_TAX_RATE))
     issue = date(2026, 1, 1) + timedelta(days=rng.randrange(300))
 
