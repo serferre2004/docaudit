@@ -1,3 +1,4 @@
+from docaudit.rag.answering import ClauseAnswerer, build_answer_prompt, verify_citations
 from docaudit.rag.base import Retriever
 from docaudit.rag.chunking import chunk_document
 from docaudit.rag.embeddings import Embedder, HashingEmbedder, OllamaEmbedder
@@ -23,6 +24,7 @@ __all__ = [
     "Chunk",
     "Citation",
     "ClauseAnswer",
+    "ClauseAnswerer",
     "Embedder",
     "EvalQuestion",
     "HashingEmbedder",
@@ -32,6 +34,7 @@ __all__ = [
     "SearchHit",
     "SourceDocument",
     "VectorIndex",
+    "build_answer_prompt",
     "chunk_document",
     "cosine_similarity",
     "hit_rate",
@@ -39,4 +42,5 @@ __all__ = [
     "reciprocal_rank",
     "reciprocal_rank_fusion",
     "tokenize",
+    "verify_citations",
 ]
