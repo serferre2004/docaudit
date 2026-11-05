@@ -1,6 +1,7 @@
 from docaudit.rag.base import Retriever
 from docaudit.rag.chunking import chunk_document
 from docaudit.rag.embeddings import Embedder, HashingEmbedder, OllamaEmbedder
+from docaudit.rag.hybrid import HybridRetriever, reciprocal_rank_fusion
 from docaudit.rag.keyword import BM25Index, tokenize
 from docaudit.rag.schemas import (
     AnswerError,
@@ -24,6 +25,7 @@ __all__ = [
     "Embedder",
     "EvalQuestion",
     "HashingEmbedder",
+    "HybridRetriever",
     "OllamaEmbedder",
     "Retriever",
     "SearchHit",
@@ -31,5 +33,6 @@ __all__ = [
     "VectorIndex",
     "chunk_document",
     "cosine_similarity",
+    "reciprocal_rank_fusion",
     "tokenize",
 ]
