@@ -1,5 +1,6 @@
 from docaudit.rag.base import Retriever
 from docaudit.rag.chunking import chunk_document
+from docaudit.rag.embeddings import Embedder, HashingEmbedder, OllamaEmbedder
 from docaudit.rag.schemas import (
     AnswerError,
     AnswerResult,
@@ -10,6 +11,7 @@ from docaudit.rag.schemas import (
     SearchHit,
     SourceDocument,
 )
+from docaudit.rag.vector import VectorIndex, cosine_similarity
 
 __all__ = [
     "AnswerError",
@@ -17,9 +19,14 @@ __all__ = [
     "Chunk",
     "Citation",
     "ClauseAnswer",
+    "Embedder",
     "EvalQuestion",
+    "HashingEmbedder",
+    "OllamaEmbedder",
     "Retriever",
     "SearchHit",
     "SourceDocument",
+    "VectorIndex",
     "chunk_document",
+    "cosine_similarity",
 ]
