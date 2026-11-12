@@ -8,6 +8,8 @@ uv run docaudit eval-extraction --n 12           # field-level accuracy on synth
 uv run docaudit corpus                           # writes contracts to data/generated/corpus/
 uv run docaudit rag-eval                         # retrieval hit rate per search strategy
 uv run docaudit rag-ask "When must we pay Aston Logistics?"   # an answer with citations
+uv run docaudit audit case-06                    # audits one invoice, showing each tool call
+uv run docaudit audit-eval                       # precision and recall on seeded discrepancies
 """
 
 import argparse
@@ -41,7 +43,8 @@ from docaudit.rag import (
     mean_reciprocal_rank,
 )
 from docaudit.rag.metrics import RetrievalResult
-from docaudit.synthetic import generate_corpus, generate_invoices
+from docaudit.synthetic import generate_audit_cases, generate_corpus, generate_invoices
+from docaudit.tools import ToolLoopError, audit_invoice, score_findings
 
 PROVIDERS = ["anthropic", "ollama"]
 SEARCH_MODES = ["vector", "keyword", "hybrid"]
@@ -246,6 +249,70 @@ async def _rag_ask(question: str, seed: int, mode: str, provider_name: str | Non
     return 0
 
 
+async def _audit(case_id: str, seed: int, provider_name: str | None) -> int:
+    erp, cases = generate_audit_cases(seed=seed)
+    case = next((c for c in cases if c.id == case_id), None)
+    if case is None:
+        print(f"error: unknown case {case_id!r}; try one of {cases[0].id}..{cases[-1].id}")
+        return 1
+    print(f"{case.invoice.model_dump_json(indent=2)}\n")
+    try:
+        async with create_provider(_settings(provider_name)) as provider:
+            result = await audit_invoice(provider, erp, case.invoice)
+    except (LLMError, ToolLoopError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    for execution in result.loop.executions:
+        marker = "ERROR " if execution.result.is_error else ""
+        print(f"-> {execution.call.name}({json.dumps(execution.call.arguments)})")
+        print(f"   {marker}{execution.result.content}")
+    print(f"\n{result.loop.text}\n")
+    print("findings:", [finding.code for finding in result.findings] or "none")
+    print("expected:", sorted(case.expected) or "none")
+    usage = result.loop.usage
+    print(f"[turns={result.loop.turns} | in={usage.input_tokens} out={usage.output_tokens}]")
+    return 0
+
+
+async def _audit_eval(seed: int, provider_name: str | None, limit: int | None) -> int:
+    erp, cases = generate_audit_cases(seed=seed)
+    selected = cases[:limit] if limit else cases
+    pairs: list[tuple[frozenset[str], frozenset[str]]] = []
+    tool_counts: Counter[str] = Counter()
+    failures = 0
+    turns = 0
+    try:
+        async with create_provider(_settings(provider_name)) as provider:
+            for case in selected:
+                try:
+                    result = await audit_invoice(provider, erp, case.invoice)
+                except ToolLoopError as exc:
+                    failures += 1
+                    pairs.append((case.expected, frozenset()))
+                    print(f"{case.id} FAILED: {exc}", file=sys.stderr)
+                    continue
+                found = frozenset(finding.code for finding in result.findings)
+                pairs.append((case.expected, found))
+                tool_counts.update(e.call.name for e in result.loop.executions)
+                turns += result.loop.turns
+                mark = "ok" if found == case.expected else "XX"
+                print(
+                    f"{mark} {case.id}  expected={sorted(case.expected)}  found={sorted(found)}"
+                    f"  turns={result.loop.turns}"
+                )
+    except LLMError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    scores = score_findings(pairs)
+    print(
+        f"\nprecision={scores.precision:.1%}  recall={scores.recall:.1%}  "
+        f"exact={scores.exact_cases}/{scores.cases}  "
+        f"false_alarms={scores.false_alarm_cases}  failed={failures}"
+    )
+    print(f"turns={turns}  tools={dict(tool_counts)}")
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="docaudit")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -287,6 +354,16 @@ def main() -> None:
     rag_ask.add_argument("--provider", choices=PROVIDERS)
     rag_ask.add_argument("--k", type=int, default=5)
 
+    audit = sub.add_parser("audit", help="audit one synthetic invoice, showing each tool call")
+    audit.add_argument("case")
+    audit.add_argument("--seed", type=int, default=0)
+    audit.add_argument("--provider", choices=PROVIDERS)
+
+    audit_eval = sub.add_parser("audit-eval", help="score the auditor on seeded discrepancies")
+    audit_eval.add_argument("--seed", type=int, default=0)
+    audit_eval.add_argument("--provider", choices=PROVIDERS)
+    audit_eval.add_argument("--limit", type=int)
+
     args = parser.parse_args()
     match args.command:
         case "ask":
@@ -306,4 +383,8 @@ def main() -> None:
             code = asyncio.run(_rag_eval(args.seed, args.mode))
         case "rag-ask":
             code = asyncio.run(_rag_ask(args.question, args.seed, args.mode, args.provider, args.k))
+        case "audit":
+            code = asyncio.run(_audit(args.case, args.seed, args.provider))
+        case "audit-eval":
+            code = asyncio.run(_audit_eval(args.seed, args.provider, args.limit))
     raise SystemExit(code)
