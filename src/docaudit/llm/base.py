@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from types import TracebackType
 from typing import Any, Protocol, Self
 
-from docaudit.llm.types import LLMResponse, Message
+from docaudit.llm.types import LLMResponse, Message, ToolDefinition
 
 
 class LLMProvider(Protocol):
@@ -26,6 +26,7 @@ class LLMProvider(Protocol):
         temperature: float | None = None,
         max_tokens: int = 1024,
         response_schema: dict[str, Any] | None = None,
+        tools: Sequence[ToolDefinition] | None = None,
     ) -> LLMResponse:
         """Return one assistant reply for the conversation.
 
@@ -35,6 +36,9 @@ class LLMProvider(Protocol):
         ``response_schema`` is an optional hint: a JSON schema the reply should follow.
         Backends with native support enforce it, the others may ignore it, so it is never a
         guarantee. Callers must still validate the reply.
+
+        ``tools`` lists what the model may ask to run. Requests come back in
+        ``LLMResponse.tool_calls``. The provider never runs anything: that is the caller's job.
         """
         ...
 
