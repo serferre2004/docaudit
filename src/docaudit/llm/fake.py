@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from types import TracebackType
 from typing import Any, Self
 
-from docaudit.llm.types import LLMError, LLMResponse, Message, Usage
+from docaudit.llm.types import LLMError, LLMResponse, Message, ToolDefinition, Usage
 
 
 @dataclass
@@ -13,6 +13,7 @@ class RecordedCall:
     temperature: float | None
     max_tokens: int
     response_schema: dict[str, Any] | None = None
+    tools: list[ToolDefinition] | None = None
 
 
 @dataclass
@@ -21,10 +22,11 @@ class FakeProvider:
 
     Give it the replies it should return, in order. It records every call so tests
     can assert on exactly what the code under test sent to "the model". Every reply
-    reports ``usage_per_call``, so tests can check token accounting.
+    reports ``usage_per_call``, so tests can check token accounting. A reply is either plain
+    text or a whole ``LLMResponse``, which is how tests script tool calls.
     """
 
-    replies: list[str]
+    replies: list[str | LLMResponse]
     name: str = "fake"
     calls: list[RecordedCall] = field(default_factory=list)
     closed: bool = False
@@ -38,16 +40,27 @@ class FakeProvider:
         temperature: float | None = None,
         max_tokens: int = 1024,
         response_schema: dict[str, Any] | None = None,
+        tools: Sequence[ToolDefinition] | None = None,
     ) -> LLMResponse:
         if self.closed:
             raise LLMError("FakeProvider was used after aclose()")
         self.calls.append(
-            RecordedCall(list(messages), system, temperature, max_tokens, response_schema)
+            RecordedCall(
+                list(messages),
+                system,
+                temperature,
+                max_tokens,
+                response_schema,
+                list(tools) if tools is not None else None,
+            )
         )
         if not self.replies:
             raise LLMError("FakeProvider ran out of scripted replies")
+        reply = self.replies.pop(0)
+        if isinstance(reply, LLMResponse):
+            return reply.model_copy(update={"usage": self.usage_per_call})
         return LLMResponse(
-            text=self.replies.pop(0),
+            text=reply,
             model="fake-model",
             stop_reason="end_turn",
             usage=self.usage_per_call,
