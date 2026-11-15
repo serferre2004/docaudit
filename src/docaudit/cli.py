@@ -10,6 +10,10 @@ uv run docaudit rag-eval                         # retrieval hit rate per search
 uv run docaudit rag-ask "When must we pay Aston Logistics?"   # an answer with citations
 uv run docaudit audit case-06                    # audits one invoice, showing each tool call
 uv run docaudit audit-eval                       # precision and recall on seeded discrepancies
+uv run docaudit agent case-00                    # one document through the approval workflow
+uv run docaudit agent-review case-00 --action approve --reviewer ana   # answer an escalation
+uv run docaudit agent-history case-00            # the checkpoints of that run
+uv run docaudit agent-eval                       # decision accuracy and unsafe approvals
 """
 
 import argparse
@@ -19,6 +23,19 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+from docaudit.agent import (
+    Action,
+    AgentOutcome,
+    AuditNodes,
+    HumanDecision,
+    build_graph,
+    memory_checkpointer,
+    resume_document,
+    run_document,
+    score_decisions,
+    sqlite_checkpointer,
+    thread_config,
+)
 from docaudit.config import Settings, get_settings
 from docaudit.extraction import (
     ExtractionError,
@@ -43,7 +60,12 @@ from docaudit.rag import (
     mean_reciprocal_rank,
 )
 from docaudit.rag.metrics import RetrievalResult
-from docaudit.synthetic import generate_audit_cases, generate_corpus, generate_invoices
+from docaudit.synthetic import (
+    generate_agent_cases,
+    generate_audit_cases,
+    generate_corpus,
+    generate_invoices,
+)
 from docaudit.tools import ToolLoopError, audit_invoice, score_findings
 
 PROVIDERS = ["anthropic", "ollama"]
@@ -313,6 +335,120 @@ async def _audit_eval(seed: int, provider_name: str | None, limit: int | None) -
     return 0
 
 
+AGENT_DB = Path("data/generated/agent-checkpoints.sqlite")
+AUDIT_LOG = Path("data/generated/audit-log.jsonl")
+
+
+def _print_outcome(outcome: AgentOutcome) -> None:
+    if outcome.decision is not None:
+        print(f"decision: {outcome.decision.action}")
+        for reason in outcome.decision.reasons:
+            print(f"  - {reason}")
+    if outcome.status == "waiting_for_human":
+        print(
+            f"\nwaiting for a human. Resume with:\n  uv run docaudit agent-review "
+            f"{outcome.document_id} --action approve|flag --reviewer NAME [--note TEXT]"
+        )
+        return
+    assert outcome.record is not None
+    record = outcome.record
+    print("\ntrail:")
+    for event in record.trail:
+        print(f"  [{event.step}] {event.detail}")
+    print(f"\nfinal: {record.action} (decided by {record.decided_by})")
+    AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
+    with AUDIT_LOG.open("a", encoding="utf-8") as log:
+        log.write(record.model_dump_json() + "\n")
+    print(f"appended to {AUDIT_LOG}")
+
+
+async def _agent(case_id: str, seed: int, provider_name: str | None) -> int:
+    erp, cases = generate_agent_cases(seed=seed)
+    case = next((c for c in cases if c.id == case_id), None)
+    if case is None:
+        print(f"error: unknown case {case_id!r}; try one of {cases[0].id}..{cases[-1].id}")
+        return 1
+    print(f"{case.document}\n\nexpected: {case.expected}\n")
+    try:
+        async with (
+            create_provider(_settings(provider_name)) as provider,
+            sqlite_checkpointer(AGENT_DB) as saver,
+        ):
+            await saver.adelete_thread(case_id)  # a fresh run every time
+            app = build_graph(AuditNodes(provider, erp), saver)
+            outcome = await run_document(app, case_id, case.document)
+    except LLMError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    _print_outcome(outcome)
+    return 0
+
+
+async def _agent_review(case_id: str, human: HumanDecision, seed: int) -> int:
+    erp, _ = generate_agent_cases(seed=seed)
+    async with (
+        create_provider(_settings(None)) as provider,
+        sqlite_checkpointer(AGENT_DB) as saver,
+    ):
+        app = build_graph(AuditNodes(provider, erp), saver)
+        try:
+            outcome = await resume_document(app, case_id, human)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+    _print_outcome(outcome)
+    return 0
+
+
+async def _agent_history(case_id: str, seed: int) -> int:
+    erp, _ = generate_agent_cases(seed=seed)
+    async with (
+        create_provider(_settings(None)) as provider,
+        sqlite_checkpointer(AGENT_DB) as saver,
+    ):
+        app = build_graph(AuditNodes(provider, erp), saver)
+        snapshots = [s async for s in app.aget_state_history(thread_config(case_id))]
+    if not snapshots:
+        print(f"no checkpoints for {case_id!r}; run `docaudit agent {case_id}` first")
+        return 1
+    for snapshot in reversed(snapshots):
+        step = snapshot.metadata.get("step") if snapshot.metadata else "?"
+        trail = snapshot.values.get("trail") or []
+        last = f"[{trail[-1].step}] {trail[-1].detail}" if trail else "(start)"
+        print(f"step {step:>2}  next={list(snapshot.next)}  {last}")
+    return 0
+
+
+async def _agent_eval(seed: int, provider_name: str | None, limit: int | None) -> int:
+    erp, cases = generate_agent_cases(seed=seed)
+    selected = cases[:limit] if limit else cases
+    pairs: list[tuple[Action, Action]] = []
+    try:
+        async with create_provider(_settings(provider_name)) as provider:
+            app = build_graph(AuditNodes(provider, erp), memory_checkpointer())
+            for case in selected:
+                outcome = await run_document(app, case.id, case.document)
+                assert outcome.decision is not None
+                actual = outcome.decision.action
+                pairs.append((case.expected, actual))
+                mark = "ok" if actual == case.expected else "XX"
+                print(
+                    f"{mark} {case.id}  expected={case.expected:<8}  got={actual:<8}  "
+                    f"{outcome.decision.reasons[0][:70]}"
+                )
+    except LLMError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    scores = score_decisions(pairs)
+    print(
+        f"\naccuracy={scores.accuracy:.1%}  unsafe_approvals={scores.unsafe_approvals}  "
+        f"needless_escalations={scores.needless_escalations}  "
+        f"escalation_rate={scores.escalation_rate:.1%}"
+    )
+    print(f"confusion (expected->got): {scores.confusion}")
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="docaudit")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -364,6 +500,27 @@ def main() -> None:
     audit_eval.add_argument("--provider", choices=PROVIDERS)
     audit_eval.add_argument("--limit", type=int)
 
+    agent = sub.add_parser("agent", help="run one document through the approval workflow")
+    agent.add_argument("case")
+    agent.add_argument("--seed", type=int, default=0)
+    agent.add_argument("--provider", choices=PROVIDERS)
+
+    review = sub.add_parser("agent-review", help="give a waiting document its human decision")
+    review.add_argument("case")
+    review.add_argument("--action", choices=("approve", "flag"), required=True)
+    review.add_argument("--reviewer", required=True)
+    review.add_argument("--note", default="")
+    review.add_argument("--seed", type=int, default=0)
+
+    history = sub.add_parser("agent-history", help="list the checkpoints of one document")
+    history.add_argument("case")
+    history.add_argument("--seed", type=int, default=0)
+
+    agent_eval = sub.add_parser("agent-eval", help="score the workflow's decisions")
+    agent_eval.add_argument("--seed", type=int, default=0)
+    agent_eval.add_argument("--provider", choices=PROVIDERS)
+    agent_eval.add_argument("--limit", type=int)
+
     args = parser.parse_args()
     match args.command:
         case "ask":
@@ -387,4 +544,13 @@ def main() -> None:
             code = asyncio.run(_audit(args.case, args.seed, args.provider))
         case "audit-eval":
             code = asyncio.run(_audit_eval(args.seed, args.provider, args.limit))
+        case "agent":
+            code = asyncio.run(_agent(args.case, args.seed, args.provider))
+        case "agent-review":
+            human = HumanDecision(action=args.action, reviewer=args.reviewer, note=args.note)
+            code = asyncio.run(_agent_review(args.case, human, args.seed))
+        case "agent-history":
+            code = asyncio.run(_agent_history(args.case, args.seed))
+        case "agent-eval":
+            code = asyncio.run(_agent_eval(args.seed, args.provider, args.limit))
     raise SystemExit(code)
