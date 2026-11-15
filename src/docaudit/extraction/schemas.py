@@ -13,10 +13,22 @@ The schema checks *shape*, not *business rules*. A total that doesn't add up is 
 
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from docaudit.llm.types import Usage
+
+
+def _every_field_required(schema: dict[str, Any]) -> None:
+    """List every property as required in the JSON schema the MODEL sees.
+
+    Ollama's structured output lets the model skip properties that aren't required, and some
+    models (qwen2.5) skip every optional one, even when the document prints it: the tax id and the
+    purchase order silently became ``None``. Requiring them all makes the model write each key,
+    ``null`` included. Validation is unchanged: Pydantic still applies the defaults.
+    """
+    schema["required"] = list(schema.get("properties", {}))
 
 
 class LineItem(BaseModel):
@@ -29,7 +41,7 @@ class LineItem(BaseModel):
 
 
 class Invoice(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, json_schema_extra=_every_field_required)
 
     invoice_number: str = Field(
         min_length=1, description="Exactly as printed, e.g. 'INV-2026-0042'"

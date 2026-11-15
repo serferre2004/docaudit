@@ -82,5 +82,5 @@ class InvoiceExtractor:
                 msgs.append(repair_message)
 
         raise ExtractionError(
-            f"Failed to extract invoice after {self.max_attempts} attempts: {error_msg}"
+            f"Invoice extraction failed after {self.max_attempts} attempts: {error_msg}"
         ) from last_exception
