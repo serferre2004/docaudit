@@ -116,6 +116,18 @@ def _generate_one(rng: random.Random, index: int, layout: str) -> SyntheticInvoi
 # --- Formatting helpers ------------------------------------------------------------
 
 
+def render_invoice(invoice: Invoice, layout: str) -> str:
+    """The document text for ``invoice`` in one of ``LAYOUTS``."""
+    renderers = {
+        "labeled": _render_labeled,
+        "table_es": _render_table_es,
+        "letter": _render_letter,
+    }
+    if layout not in renderers:
+        raise ValueError(f"Unknown layout {layout!r}; expected one of {LAYOUTS}")
+    return renderers[layout](invoice)
+
+
 def _us(amount: Decimal) -> str:
     return f"{amount:,.2f}"
 
