@@ -1,4 +1,4 @@
-.PHONY: install lint format typecheck test check integration
+.PHONY: install lint format typecheck test check integration serve
 
 install:
 	uv sync
@@ -24,3 +24,7 @@ check: lint typecheck test
 # Hits real models. Needs ANTHROPIC_API_KEY or a running Ollama.
 integration:
 	uv run pytest -m integration
+
+# The API on http://localhost:8000 (docs at /docs). Reloads when the code changes.
+serve:
+	uv run uvicorn docaudit.api.app:create_app --factory --reload

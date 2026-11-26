@@ -1,0 +1,34 @@
+# docker compose up --build          the API, using the Ollama already running on your machine
+# docker compose --profile ollama up  the API plus Ollama in a container (pull a model first:
+#                                     docker compose exec ollama ollama pull qwen2.5:7b)
+#
+# Settings come from your shell or a .env file next to this one (see .env.example).
+# If the build stops asking for "--allow=fs.read=Dockerfile", build without bake: COMPOSE_BAKE=false.
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DOCAUDIT_LLM_PROVIDER: ${DOCAUDIT_LLM_PROVIDER:-ollama}
+      DOCAUDIT_OLLAMA_BASE_URL: ${DOCAUDIT_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      DOCAUDIT_OLLAMA_MODEL: ${DOCAUDIT_OLLAMA_MODEL:-qwen2.5:7b}
+      DOCAUDIT_ANTHROPIC_API_KEY: ${DOCAUDIT_ANTHROPIC_API_KEY:-}
+      DOCAUDIT_API_KEY: ${DOCAUDIT_API_KEY:-}
+    # host.docker.internal works out of the box on Docker Desktop; this makes it work on Linux.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - api-data:/app/data  # the checkpoints: paused documents survive a restart
+    restart: unless-stopped
+
+  ollama:
+    profiles: ["ollama"]
+    image: ollama/ollama:0.40.16
+    volumes:
+      - ollama-models:/root/.ollama
+
+volumes:
+  api-data:
+  ollama-models:
